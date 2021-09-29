@@ -1,0 +1,8 @@
+#ifndef EXIT_CODES_H
+
+#define EXIT_CODES_H
+
+#define EXIT_SUCCESS 0
+#define EXIT_ERROR_COMMAND_LINE_ARGUMENT 3
+
+#endif
