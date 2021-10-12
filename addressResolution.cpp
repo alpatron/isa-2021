@@ -18,11 +18,11 @@ void resolveNameToAddress(const char* host,Address* address){
     if ((returnCode = getaddrinfo(host,NULL,NULL,&result)) != 0){
         throw std::runtime_error(gai_strerror(returnCode));
     }
-
+    
     if (result->ai_family == AF_INET || result->ai_family == AF_INET6){
         address->addressFamily = result->ai_family;
     } else {
-        throw std::runtime_error("Fatal unexpected error!") //I don't think that anything else than AF_INET and AF_INET6 can even be returned from the getaddrinfo function, but just to be sure, I handle for the unforseen circumstance.
+        throw std::runtime_error("Fatal unexpected error!"); //I don't think that anything else than AF_INET and AF_INET6 can even be returned from the getaddrinfo function, but just to be sure, I handle for the unforseen circumstance.
         freeaddrinfo(result);;
     }
 
