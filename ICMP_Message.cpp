@@ -1,14 +1,9 @@
+#include "ICMP_Message.hpp"
 #include <stdint.h>
 #include <cstddef>
 #include <arpa/inet.h>
 #include <cstring>
-
-#define ICMP_ECHO_TYPE_OFFSET 0
-#define ICMP_ECHO_CODE_OFFSET 1
-#define ICMP_ECHO_CHECKSUM_OFFSET 2
-#define ICMP_ECHO_IDENTIFIER_OFFSET 4
-#define ICMP_ECHO_SEQUENCE_OFFSET 6
-#define ICMP_ECHO_PAYLOAD_OFFSET 8
+#include <netinet/ip_icmp.h>
 
 uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len){
     uint32_t sum = 0;
@@ -24,11 +19,26 @@ uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len){
     return ~(uint16_t)((sum & 0xffff) + (sum >> 16));
 }
 
-void buildEchoMessage(bool reply, uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out){
-    *((uint8_t*)(out+ICMP_ECHO_TYPE_OFFSET)) = reply ? 0 : 8;
-    *((uint8_t*)(out+ICMP_ECHO_CODE_OFFSET)) = 0;
-    *((uint16_t*)(out+ICMP_ECHO_IDENTIFIER_OFFSET)) = htons(identifier);
-    *((uint16_t*)(out+ICMP_ECHO_SEQUENCE_OFFSET)) = htons(sequence);
-    memcpy(out+ICMP_ECHO_PAYLOAD_OFFSET,payload,payloadLenght);
-    *((uint16_t*)(out+ICMP_ECHO_CHECKSUM_OFFSET)) = htons(calculateChecksum((uint8_t*)out,payloadLenght+8));
+size_t buildEchoMessage(bool reply, uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out){
+    ((icmphdr*)out)->type = reply ? ICMP_ECHOREPLY : ICMP_ECHO;
+    ((icmphdr*)out)->code = 0;
+    ((icmphdr*)out)->un.echo.id = htons(identifier);
+    ((icmphdr*)out)->un.echo.sequence = htons(sequence);
+    memcpy(out+ICMP_ECHO_HEADER_SIZE,payload,payloadLenght);
+    ((icmphdr*)out)->checksum = htons(calculateChecksum((uint8_t*)out,payloadLenght+8));
+    return payloadLenght + ICMP_ECHO_HEADER_SIZE;
+}
+
+bool isMyReplyICMP_Packet(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize){
+    if (originalSize != receivedSize){
+        return false;
+    }
+    if (((icmphdr*)receivedPacket)->type != ICMP_ECHOREPLY || ((icmphdr*)receivedPacket)->code != 0){
+        return false;
+    }
+    if (((icmphdr*)receivedPacket)->un.echo.id != ((icmphdr*)original_ICMP_packet)->un.echo.id ||
+        ((icmphdr*)receivedPacket)->un.echo.sequence != ((icmphdr*)original_ICMP_packet)->un.echo.sequence){
+        return false;
+    }
+    return memcmp(original_ICMP_packet+ICMP_ECHO_HEADER_SIZE,receivedPacket+ICMP_ECHO_HEADER_SIZE,originalSize) == 0;
 }
