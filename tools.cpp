@@ -1,9 +1,24 @@
-#include "ICMP_Message.hpp"
+#include "tools.hpp"
 #include <stdint.h>
 #include <cstddef>
 #include <arpa/inet.h>
 #include <cstring>
 #include <netinet/ip_icmp.h>
+#include <stdexcept>
+
+bool compareIPv4Sender(void* IP_packet,size_t size,Address* address){
+    if (size < sizeof(iphdr)){
+        throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
+    }
+    return ((iphdr*)IP_packet)->saddr == (uint32_t)address->address->sa_data;
+}
+
+size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
+    if (size < sizeof(iphdr)){
+        throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
+    }
+    return ((iphdr*)IP_packet)->ihl;
+}
 
 uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len){
     uint32_t sum = 0;

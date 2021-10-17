@@ -1,6 +1,6 @@
 #include <fstream>
 #include "addressResolution.hpp"
-#include "ICMP_Message.hpp"
+#include "tools.hpp"
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stdexcept>
@@ -15,8 +15,6 @@
 
 const int RESEND_ON_FAIL_WAIT = 1;
 
-const char* ORIGINATE_IDENTIFIER = "riko";
-const char* ANSWER_IDENTIFIER = "regu";
 const size_t IDENTIFIER_LENGTH = 4;
 const size_t PACKET_COUNT_LENGTH = sizeof(uint32_t);
 const size_t PAYLOAD_BUFFER_SIZE = 1400;
@@ -31,20 +29,6 @@ bool isMyPacket(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t ori
     auto receivedPacketIPHeaderOffset = calculateIPv4HeaderOffset(receivedPacket,receivedSize);
     auto receivedICMP_packet = receivedPacket + receivedPacketIPHeaderOffset;
     return isMyReplyICMP_Packet(original_ICMP_packet,receivedICMP_packet,originalSize,receivedSize-receivedPacketIPHeaderOffset);
-}
-
-bool compareIPv4Sender(void* IP_packet,size_t size,Address* address){
-    if (size < sizeof(iphdr)){
-        throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
-    }
-    return ((iphdr*)IP_packet)->saddr == (uint32_t)address->address->sa_data;
-}
-
-size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
-    if (size < sizeof(iphdr)){
-        throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
-    }
-    return ((iphdr*)IP_packet)->ihl;
 }
 
 uint32_t calculatePacketCount(const char* filename, std::uintmax_t fileSize, size_t payloadLength){
@@ -148,7 +132,7 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
     //Sending the first packet.
     auto packetCount = calculatePacketCount(filename.c_str(),filesize,PAYLOAD_BUFFER_SIZE);
     for(uint32_t packetNumber = 0;packetNumber<packetCount;packetNumber++){
-        while(1){
+        while(true){
             auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,packetNumber,PAYLOAD_BUFFER_SIZE,payloadBuffer);
             auto echoLength = buildEchoMessage(false,(uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer);
             while((errorCode = sendto(echoSocket,sendBuffer,echoLength,NULL,address->address,address->addressLenght)) != echoLength){
