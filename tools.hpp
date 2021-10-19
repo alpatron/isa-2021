@@ -5,9 +5,9 @@
 #include <cstddef>
 #include "addressResolution.hpp"
 
-const size_t ICMP_ECHO_HEADER_SIZE = 8;
-const char* ORIGINATE_IDENTIFIER = "riko";
-const char* ANSWER_IDENTIFIER = "regu";
+#define ICMP_ECHO_HEADER_SIZE 8
+#define ORIGINATE_IDENTIFIER "riko"
+#define ANSWER_IDENTIFIER "regu"
 
 bool compareIPv4Sender(void* IP_packet,size_t size,Address* address);
 size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size);

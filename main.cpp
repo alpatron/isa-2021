@@ -1,6 +1,8 @@
 #include "exitCodes.hpp"
 #include "argumentParsing.hpp"
 #include "addressResolution.hpp"
+#include "sendFile.hpp"
+#include "receiveFile.hpp"
 #include <iostream>
 
 int main (int argc, char* argv[]){
@@ -15,7 +17,7 @@ int main (int argc, char* argv[]){
     }
 
     if(arguments.listeningMode){
-        ;//Todo
+        receiveFiles();
     } else {
         try{
             resolveNameToAddress(arguments.hostName,&address);
@@ -25,8 +27,8 @@ int main (int argc, char* argv[]){
             std::cerr << e.what() << std::endl;
             return EXIT_ERROR_NAME_RESOLUTION;
         }
+        sendFile_IPv4(arguments.fileName,&address);
     }
-    
     
     return EXIT_SUCCESS;
 }

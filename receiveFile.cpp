@@ -1,3 +1,4 @@
+#include "receiveFile.hpp"
 #include "tools.hpp"
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -8,6 +9,8 @@
 #include <arpa/inet.h>
 #include <netinet/ip_icmp.h>
 #include <fstream>
+#include <filesystem>
+#include <iostream>
 
 #define IPV4_SOCKET_OFFSET 0
 #define IPV6_SOCKET_OFFSET 1
@@ -33,38 +36,99 @@ bool isMyPacketIPv4(uint8_t* packet,size_t packetSize,uint32_t expectedPacketNum
     offset += ICMP_ECHO_HEADER_SIZE;
     if (packetSize - offset < sizeof(ORIGINATE_IDENTIFIER))
         return false;
-    return memcmp(packet+offset,ORIGINATE_IDENTIFIER,sizeof(ORIGINATE_IDENTIFIER)-1) == 0; //Terminating binary zero is not included in a packet.
+    if (memcmp(packet+offset,ORIGINATE_IDENTIFIER,sizeof(ORIGINATE_IDENTIFIER)-1) != 0){ //Terminating binary zero is not included in a packet.
+        return false;
+    }
+    if (expectedPacketNumber == 0){ //The initial packet contains packet-count and a filename fields. If the filename field does not contain a null terminator, it's a malformed packet and a buffer over-read would happen.
+        offset += sizeof(uint32_t); // Skip the packet-count field.
+        auto fileNameLenght = strnlen((char*)(packet+offset),packetSize - offset);
+        if (fileNameLenght == packetSize - offset){
+            return false;
+        }
+    }
+    return true;
 }
 
-void processInitialTransferPacket(uint8_t* packet, size_t packetSize, char* out_filename, size_t maxFilenameLength, uint32_t* out_packetCount,size_t* out_dataOffset){
+void processInitialTransferPacket(uint8_t* packet, size_t packetSize, char* out_filename, size_t maxFilenameLength, uint32_t* out_packetCount,size_t* out_dataOffset,uint32_t* out_address){
+    *out_address = ((iphdr*)packet)->saddr;
     auto offset = calculateIPv4HeaderOffset(packet,packetSize) + ICMP_ECHO_HEADER_SIZE + sizeof(ORIGINATE_IDENTIFIER) - 1;
     *out_packetCount = ntohl(*((uint32_t*)(packet+offset)));
     offset += sizeof(uint32_t);
     auto fileNameLenght = strnlen((char*)(packet+offset),packetSize - offset);
     if (fileNameLenght == packetSize - offset){
-        throw std::runtime_error("Malformed initial packet!");
+        throw std::runtime_error("Malformed initial packet! (You shouldn't see this error.)");
+    }
+    if (fileNameLenght > maxFilenameLength){
+        throw std::runtime_error("Received filename is too long!");
     }
     strcpy(out_filename,(char*)(packet+offset));
     offset += fileNameLenght + 1;
     *out_dataOffset = offset;
 }
 
+size_t processContinuingPacket(uint8_t* packet, size_t packetSize){
+    return calculateIPv4HeaderOffset(packet,packetSize) + ICMP_ECHO_HEADER_SIZE + sizeof(ORIGINATE_IDENTIFIER) - 1;
+}
+
+void renameIfFileExists(char* filename,size_t bufferLenght){
+    bool renamed = false;
+    for(int i = 0;std::filesystem::exists(filename);i++){
+        renamed = true;
+        std::cerr << "File " << filename << " already exists. Renaming to ";
+        auto endOffset = strlen(filename);
+        auto returnCode = snprintf(filename+endOffset,bufferLenght-endOffset,"-%d",i);
+        if (returnCode < 0){
+            throw std::runtime_error("Encoding error while renaming file.");
+        } else if ((size_t)returnCode >= bufferLenght-endOffset) {
+            throw std::runtime_error("Exceeded buffer size when renaming file. The received filename may be extremely long.");
+        }
+    }
+    if (renamed){
+        std::cerr << filename << "\n";
+    }
+}
+
 void receiveFile(int socket,bool IPv6){
     uint8_t receiveBuffer[1500];
-    auto packetSize = recv(socket,receiveBuffer,sizeof(receiveBuffer),NULL);
-    if (!isMyPacketIPv4(receiveBuffer,packetSize,0,NULL))
+    auto packetSize = recv(socket,receiveBuffer,sizeof(receiveBuffer),0);
+    if (packetSize == -1){
+        throw std::runtime_error("An error occured while trying to read from a socket.");
+    }
+    if (!isMyPacketIPv4(receiveBuffer,packetSize,0,0))
         return;
     
+    uint32_t senderAddress;
     uint32_t packetCount;
     char filename[1500];
-    size_t initialDataOffset;
-    try{
-        processInitialTransferPacket(receiveBuffer,packetSize,filename,1500,&packetCount,&initialDataOffset);
-    } catch (std::runtime_error& e){
-        return;
+    size_t dataOffset;
+    processInitialTransferPacket(receiveBuffer,packetSize,filename,1500,&packetCount,&dataOffset,&senderAddress);
+
+    renameIfFileExists(filename,sizeof(filename));
+    
+    auto outputFile = std::ofstream(filename,std::ofstream::binary);
+    if (outputFile.fail()){
+        throw std::runtime_error("Failed to open ouput file.");
     }
 
-    auto outputFile = std::ofstream(filename,std::ofstream::binary);
+    outputFile.write((char*)receiveBuffer+dataOffset,sizeof(receiveBuffer)-dataOffset);
+    if (outputFile.fail()){
+        throw std::runtime_error("I/O error when writing file.");
+    }
+    for (uint32_t expectedPacketNumber = 1;expectedPacketNumber < packetCount;){
+        packetSize = recv(socket,receiveBuffer,sizeof(receiveBuffer),0);
+        if (packetSize == -1){
+            throw std::runtime_error("An error occured while trying to read from a socket.");
+        }
+        if (isMyPacketIPv4(receiveBuffer,packetSize,expectedPacketNumber,senderAddress)){
+            expectedPacketNumber++;
+            dataOffset = processContinuingPacket(receiveBuffer,sizeof(receiveBuffer));
+            outputFile.write(((char*)receiveBuffer)+dataOffset,sizeof(receiveBuffer)-dataOffset);
+            if (outputFile.fail()){
+                throw std::runtime_error("I/O error when writing file.");
+            }
+        }
+    }
+    outputFile.close();
 }
 
 [[noreturn]] void receiveFiles(){
@@ -84,16 +148,11 @@ void receiveFile(int socket,bool IPv6){
             throw std::runtime_error(strerror(errno));
         }
     }
-    pollfd polledSockets[] = {
-        {
-            .fd = IPv4_socket,
-            .events = POLLIN
-        },
-        {
-            .fd = IPv6_socket,
-            .events = POLLIN
-        }
-    };
+    pollfd polledSockets[2];
+    polledSockets[IPV4_SOCKET_OFFSET].fd = IPv4_socket;
+    polledSockets[IPV4_SOCKET_OFFSET].events = POLLIN;
+    polledSockets[IPV6_SOCKET_OFFSET].fd = IPv6_socket;
+    polledSockets[IPV6_SOCKET_OFFSET].events = POLLIN;
 
     while(true){
         auto pollResult = poll(polledSockets,std::size(polledSockets),-1);

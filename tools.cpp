@@ -10,7 +10,7 @@ bool compareIPv4Sender(void* IP_packet,size_t size,Address* address){
     if (size < sizeof(iphdr)){
         throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
     }
-    return ((iphdr*)IP_packet)->saddr == (uint32_t)address->address->sa_data;
+    return ((iphdr*)IP_packet)->saddr == *(uint32_t*)address->address->sa_data;
 }
 
 size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){

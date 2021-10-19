@@ -1,5 +1,5 @@
+#include "sendFile.hpp"
 #include <fstream>
-#include "addressResolution.hpp"
 #include "tools.hpp"
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -20,7 +20,7 @@ const size_t PACKET_COUNT_LENGTH = sizeof(uint32_t);
 const size_t PAYLOAD_BUFFER_SIZE = 1400;
 const size_t ICMP_MESSAGE_BUFFER_SIZE = PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE;
 const size_t RECEIVE_BUFFER_SIZE = std::max((size_t)1500,PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE);
-const timeval SOCKET_RECEIVE_TIMEOUT = {.tv_sec=30,.tv_usec=0};
+const timeval SOCKET_RECEIVE_TIMEOUT = {30,0};
 
 bool isMyPacket(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize,Address* expectedSenderAddress){
     if (!compareIPv4Sender(receivedPacket,receivedSize,expectedSenderAddress)){
@@ -56,7 +56,7 @@ size_t buildOriginatePayload(const char* filename, std::ifstream & file, uint32_
     if (returnCode < 0){
         throw std::runtime_error("Encoding error when building payload");
     }
-    if (returnCode >= payloadLenght - offset){
+    if ((size_t)returnCode >= payloadLenght - offset){
         throw std::runtime_error("Payload buffer too short while adding payload identifier. (You shouldn't see this error.)");
     }
     offset += 4;
@@ -71,7 +71,7 @@ size_t buildOriginatePayload(const char* filename, std::ifstream & file, uint32_
     if (returnCode < 0){
         throw std::runtime_error("Encoding error when building payload");
     }
-    if (returnCode >= payloadLenght - offset){
+    if ((size_t)returnCode >= payloadLenght - offset){
         throw std::runtime_error("Filename too long! Use a shorter filename!");
     }
     offset += strlen(filename) + 1;
@@ -83,13 +83,13 @@ size_t buildOriginatePayload(const char* filename, std::ifstream & file, uint32_
     return offset + file.gcount();
 }
 
-size_t buildContinuePayload(std::ifstream & file, uint32_t packetNumber, size_t payloadLenght,  uint8_t* out){
+size_t buildContinuePayload(std::ifstream & file, size_t payloadLenght,  uint8_t* out){
     size_t offset = 0;
     int returnCode = snprintf((char*)out+offset,payloadLenght - offset,"riko");
     if (returnCode < 0){
         throw std::runtime_error("Encoding error when building payload");
     }
-    if (returnCode >= payloadLenght - offset){
+    if ((size_t)returnCode >= payloadLenght - offset){
         throw std::runtime_error("Payload buffer too short while adding payload identifier. (You shouldn't see this error.)");
     }
     offset += 4;
@@ -133,16 +133,16 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
     auto packetCount = calculatePacketCount(filename.c_str(),filesize,PAYLOAD_BUFFER_SIZE);
     for(uint32_t packetNumber = 0;packetNumber<packetCount;packetNumber++){
         while(true){
-            auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,packetNumber,PAYLOAD_BUFFER_SIZE,payloadBuffer);
+            auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,PAYLOAD_BUFFER_SIZE,payloadBuffer);
             auto echoLength = buildEchoMessage(false,(uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer);
-            while((errorCode = sendto(echoSocket,sendBuffer,echoLength,NULL,address->address,address->addressLenght)) != echoLength){
+            while((size_t)(errorCode = sendto(echoSocket,sendBuffer,echoLength,0,address->address,address->addressLenght)) != echoLength){
                 std::cerr << "Failed to send packet. Waiting and retrying. Packet " << packetNumber << "/" << packetCount << "\n";
                 sleep(RESEND_ON_FAIL_WAIT);
             }
             auto sendTime = std::chrono::system_clock::now();
             bool gotMyPacket = false;
             do{
-                auto receivedBytes = recv(echoSocket,receiveBuffer,RECEIVE_BUFFER_SIZE,NULL);
+                auto receivedBytes = recv(echoSocket,receiveBuffer,RECEIVE_BUFFER_SIZE,0);
                 if (isMyPacket(sendBuffer,receiveBuffer,echoLength,receivedBytes,address)){
                     gotMyPacket = true;
                 }
