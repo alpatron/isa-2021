@@ -23,22 +23,26 @@ bool isMyPacketIPv4(uint8_t* packet,size_t packetSize,uint32_t expectedPacketNum
         if (((iphdr*)packet)->saddr != expectedAddress)
             return false;
     }
+    
     auto offset = calculateIPv4HeaderOffset(packet,packetSize);
     if (packetSize - offset < sizeof(icmphdr)){
         throw std::runtime_error("ICMP packet cannot possibly be this small. (You shouldn't see this error.)");
     }
-    if (((icmphdr*)packet+offset)->type != ICMP_ECHO || ((icmphdr*)packet+offset)->code != 0){
+    if (((icmphdr*)(packet+offset))->type != ICMP_ECHO || ((icmphdr*)(packet+offset))->code != 0){
         return false;
     }
-    if (((icmphdr*)packet+offset)->un.echo.sequence != htons((uint16_t)((expectedPacketNumber & 0xffff))) || ((icmphdr*)packet+offset)->un.echo.id != (uint16_t)((expectedPacketNumber & 0xffff0000) >> 16)){
+    if (((icmphdr*)(packet+offset))->un.echo.sequence != htons((uint16_t)((expectedPacketNumber & 0xffff))) || ((icmphdr*)(packet+offset))->un.echo.id != (uint16_t)((expectedPacketNumber & 0xffff0000) >> 16)){
         return false;
     }
     offset += ICMP_ECHO_HEADER_SIZE;
+    
     if (packetSize - offset < sizeof(ORIGINATE_IDENTIFIER))
         return false;
     if (memcmp(packet+offset,ORIGINATE_IDENTIFIER,sizeof(ORIGINATE_IDENTIFIER)-1) != 0){ //Terminating binary zero is not included in a packet.
         return false;
     }
+    offset += sizeof(ORIGINATE_IDENTIFIER)-1;
+
     if (expectedPacketNumber == 0){ //The initial packet contains packet-count and a filename fields. If the filename field does not contain a null terminator, it's a malformed packet and a buffer over-read would happen.
         offset += sizeof(uint32_t); // Skip the packet-count field.
         auto fileNameLenght = strnlen((char*)(packet+offset),packetSize - offset);
@@ -71,11 +75,12 @@ size_t processContinuingPacket(uint8_t* packet, size_t packetSize){
 }
 
 void renameIfFileExists(char* filename,size_t bufferLenght){
-    bool renamed = false;
+    if (!std::filesystem::exists(filename)){
+        return;
+    }
+    std::cerr << "File " << filename << " already exists. Renaming to ";
+    auto endOffset = strlen(filename);
     for(int i = 0;std::filesystem::exists(filename);i++){
-        renamed = true;
-        std::cerr << "File " << filename << " already exists. Renaming to ";
-        auto endOffset = strlen(filename);
         auto returnCode = snprintf(filename+endOffset,bufferLenght-endOffset,"-%d",i);
         if (returnCode < 0){
             throw std::runtime_error("Encoding error while renaming file.");
@@ -83,9 +88,7 @@ void renameIfFileExists(char* filename,size_t bufferLenght){
             throw std::runtime_error("Exceeded buffer size when renaming file. The received filename may be extremely long.");
         }
     }
-    if (renamed){
-        std::cerr << filename << "\n";
-    }
+    std::cerr << filename << "\n";
 }
 
 void receiveFile(int socket,bool IPv6){
@@ -102,15 +105,15 @@ void receiveFile(int socket,bool IPv6){
     char filename[1500];
     size_t dataOffset;
     processInitialTransferPacket(receiveBuffer,packetSize,filename,1500,&packetCount,&dataOffset,&senderAddress);
-
+    std::cerr << "Started receiving transfer of file: " << filename << "\n";
     renameIfFileExists(filename,sizeof(filename));
     
     auto outputFile = std::ofstream(filename,std::ofstream::binary);
     if (outputFile.fail()){
-        throw std::runtime_error("Failed to open ouput file.");
+        throw std::runtime_error("Failed to open output file.");
     }
 
-    outputFile.write((char*)receiveBuffer+dataOffset,sizeof(receiveBuffer)-dataOffset);
+    outputFile.write((char*)receiveBuffer+dataOffset,packetSize-dataOffset);
     if (outputFile.fail()){
         throw std::runtime_error("I/O error when writing file.");
     }
@@ -122,13 +125,14 @@ void receiveFile(int socket,bool IPv6){
         if (isMyPacketIPv4(receiveBuffer,packetSize,expectedPacketNumber,senderAddress)){
             expectedPacketNumber++;
             dataOffset = processContinuingPacket(receiveBuffer,sizeof(receiveBuffer));
-            outputFile.write(((char*)receiveBuffer)+dataOffset,sizeof(receiveBuffer)-dataOffset);
+            outputFile.write(((char*)receiveBuffer)+dataOffset,packetSize-dataOffset);
             if (outputFile.fail()){
                 throw std::runtime_error("I/O error when writing file.");
             }
         }
     }
     outputFile.close();
+    std::cerr << "File transfer complete\n";
 }
 
 [[noreturn]] void receiveFiles(){
@@ -156,7 +160,6 @@ void receiveFile(int socket,bool IPv6){
 
     while(true){
         auto pollResult = poll(polledSockets,std::size(polledSockets),-1);
-        std::cerr << "xD\n";
         if (pollResult == -1){
             throw std::runtime_error(strerror(errno));
         }

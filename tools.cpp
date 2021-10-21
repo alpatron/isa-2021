@@ -4,43 +4,43 @@
 #include <arpa/inet.h>
 #include <cstring>
 #include <netinet/ip_icmp.h>
+#include <netinet/icmp6.h>
 #include <stdexcept>
 
 bool compareIPv4Sender(void* IP_packet,size_t size,Address* address){
     if (size < sizeof(iphdr)){
         throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
     }
-    return ((iphdr*)IP_packet)->saddr == *(uint32_t*)address->address->sa_data;
+    return ((iphdr*)IP_packet)->saddr == (uint32_t)((sockaddr_in*)(address->address))->sin_addr.s_addr;
 }
 
 size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
     if (size < sizeof(iphdr)){
         throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
     }
-    return ((iphdr*)IP_packet)->ihl;
+    return ((iphdr*)IP_packet)->ihl * 4;
 }
 
-uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len){
+uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len,bool IPv6){
     uint32_t sum = 0;
-    sum += *((uint16_t*)ICMP_message);
-    ICMP_message += 4;
-    len -= 4;
-    for(;len > 1;len-=2){
-        sum += *(uint16_t*)(ICMP_message++);
+    sum += *(uint16_t*)ICMP_message; //First word -- type and code
+    size_t offset = 4; //We set the offset to 4. We move past the first word and the skip over the following, since it's the checksum word, which we need to skip for the computation.
+    for(;offset + 1 < len;offset += 2){
+        sum += *(uint16_t*)(ICMP_message+offset);
     }
-    if(len>0){
-        sum += *ICMP_message;
+    if (offset < len){
+        sum += *(uint8_t*)(ICMP_message+offset);
     }
-    return ~(uint16_t)((sum & 0xffff) + (sum >> 16));
+    return ~((uint16_t)(sum  >> 16) + (uint16_t)(sum & 0xffff));
 }
 
-size_t buildEchoMessage(bool reply, uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out){
-    ((icmphdr*)out)->type = reply ? ICMP_ECHOREPLY : ICMP_ECHO;
+size_t buildEchoMessage( uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out,bool IPv6){
+    ((icmphdr*)out)->type = IPv6 ? ICMP6_ECHO_REQUEST : ICMP_ECHO;
     ((icmphdr*)out)->code = 0;
     ((icmphdr*)out)->un.echo.id = htons(identifier);
     ((icmphdr*)out)->un.echo.sequence = htons(sequence);
     memcpy(out+ICMP_ECHO_HEADER_SIZE,payload,payloadLenght);
-    ((icmphdr*)out)->checksum = htons(calculateChecksum((uint8_t*)out,payloadLenght+8));
+    ((icmphdr*)out)->checksum = calculateChecksum((uint8_t*)out,payloadLenght+ICMP_ECHO_HEADER_SIZE,IPv6);
     return payloadLenght + ICMP_ECHO_HEADER_SIZE;
 }
 
@@ -55,5 +55,5 @@ bool isMyReplyICMP_Packet(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,
         ((icmphdr*)receivedPacket)->un.echo.sequence != ((icmphdr*)original_ICMP_packet)->un.echo.sequence){
         return false;
     }
-    return memcmp(original_ICMP_packet+ICMP_ECHO_HEADER_SIZE,receivedPacket+ICMP_ECHO_HEADER_SIZE,originalSize) == 0;
+    return memcmp(original_ICMP_packet+ICMP_ECHO_HEADER_SIZE,receivedPacket+ICMP_ECHO_HEADER_SIZE,originalSize-ICMP_ECHO_HEADER_SIZE) == 0;
 }
