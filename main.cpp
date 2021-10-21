@@ -27,8 +27,14 @@ int main (int argc, char* argv[]){
             std::cerr << e.what() << std::endl;
             return EXIT_ERROR_NAME_RESOLUTION;
         }
-        sendFile_IPv4(arguments.fileName,&address);
+        try{
+            sendFile_IPv4(arguments.fileName,&address);
+        } catch (std::runtime_error& e){
+            std::cerr << "Failure while sending file!" << std::endl;
+            std::cerr << e.what() << std::endl;
+            return -1;
+        }
+        freeAddress(&address);
     }
-    
     return EXIT_SUCCESS;
 }

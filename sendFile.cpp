@@ -77,7 +77,7 @@ size_t buildOriginatePayload(const char* filename, std::ifstream & file, uint32_
     offset += strlen(filename) + 1;
 
     file.read((char*)out+offset,payloadLenght - offset);
-    if(file.fail()){
+    if(file.fail() && !file.eof()){
         throw std::runtime_error("Error while reading file");
     }
     return offset + file.gcount();
@@ -95,7 +95,7 @@ size_t buildContinuePayload(std::ifstream & file, size_t payloadLenght,  uint8_t
     offset += 4;
 
     file.read((char*)out+offset,payloadLenght - offset);
-    if(file.fail()){
+    if(file.fail() && !file.eof()){
         throw std::runtime_error("Error while reading file");
     }
     return offset + file.gcount();
@@ -108,7 +108,7 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
     uint8_t receiveBuffer[RECEIVE_BUFFER_SIZE];
     auto echoSocket = socket(AF_INET,SOCK_RAW,IPPROTO_ICMP);
     if (echoSocket == -1){
-        if (errno == EACCES){
+        if (errno == EPERM){
             throw std::runtime_error("This programs needs to be run with super-user privileges.");
         } else {
             throw std::runtime_error(strerror(errno));
@@ -119,7 +119,7 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
     sockaddr_in echoAddress;
     echoAddress.sin_family = AF_INET;
     echoAddress.sin_port = IPPROTO_ICMP;
-    mempcpy(&echoAddress.sin_addr,&address->address->sa_data,sizeof(echoAddress.sin_addr));
+    mempcpy(&echoAddress.sin_addr,&address->address->sa_data,address->addressLenght);
 
     auto file = std::ifstream(filepath_cstring,std::ifstream::binary);
     if (file.fail()){
@@ -136,7 +136,7 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
             auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,PAYLOAD_BUFFER_SIZE,payloadBuffer);
             auto echoLength = buildEchoMessage(false,(uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer);
             while((size_t)(errorCode = sendto(echoSocket,sendBuffer,echoLength,0,address->address,address->addressLenght)) != echoLength){
-                std::cerr << "Failed to send packet. Waiting and retrying. Packet " << packetNumber << "/" << packetCount << "\n";
+                std::cerr << "Failed to send packet. Waiting and retrying. Packet " << packetNumber + 1 << "/" << packetCount << "\n";
                 sleep(RESEND_ON_FAIL_WAIT);
             }
             auto sendTime = std::chrono::system_clock::now();
@@ -151,7 +151,7 @@ void sendFile_IPv4(const char* filepath_cstring,Address* address){
             if (gotMyPacket){
                 break;
             } else {
-                std::cerr << "Did not receive reply packet in time. Resending. Packet " << packetNumber << "/" << packetCount << "\n";
+                std::cerr << "Did not receive reply packet in time. Resending. Packet " << packetNumber + 1 << "/" << packetCount << "\n";
             }
         }
         

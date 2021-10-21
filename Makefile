@@ -1,6 +1,6 @@
 MKDIR_P=mkdir -p
 CC=g++
-CFLAGS=-g -Wall -Wextra -pedantic
+CFLAGS=-std=c++17 -g -Wall -Wextra -pedantic
 BUILDDIR=./bin
 
 .PHONY: directories
@@ -12,7 +12,7 @@ ${BUILDDIR}:
 		${MKDIR_P} ${BUILDDIR}
 
 secret:
-	$(CC) $(CFLAGS) -o $(BUILDDIR)/secret main.cpp argumentParsing.cpp
+	$(CC) $(CFLAGS) -o $(BUILDDIR)/secret argumentParsing.cpp addressResolution.cpp receiveFile.cpp sendFile.cpp tools.cpp main.cpp
 
 clean:
 	rm -rf $(BUILDDIR)

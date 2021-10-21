@@ -134,7 +134,7 @@ void receiveFile(int socket,bool IPv6){
 [[noreturn]] void receiveFiles(){
     auto IPv4_socket = socket(AF_INET,SOCK_RAW,IPPROTO_ICMP);
     if (IPv4_socket == -1){
-        if (errno == EACCES){
+        if (errno == EPERM){
             throw std::runtime_error("This programs needs to be run with super-user privileges.");
         } else {
             throw std::runtime_error(strerror(errno));
@@ -142,7 +142,7 @@ void receiveFile(int socket,bool IPv6){
     }
     auto IPv6_socket = socket(AF_INET6,SOCK_RAW,IPPROTO_ICMPV6);
     if (IPv6_socket == -1){
-        if (errno == EACCES){
+        if (errno == EPERM){
             throw std::runtime_error("This programs needs to be run with super-user privileges.");
         } else {
             throw std::runtime_error(strerror(errno));
@@ -156,12 +156,13 @@ void receiveFile(int socket,bool IPv6){
 
     while(true){
         auto pollResult = poll(polledSockets,std::size(polledSockets),-1);
+        std::cerr << "xD\n";
         if (pollResult == -1){
             throw std::runtime_error(strerror(errno));
         }
-        if(polledSockets[IPV4_SOCKET_OFFSET].events & POLLIN){
+        if(polledSockets[IPV4_SOCKET_OFFSET].revents & POLLIN){
             receiveFile(IPv4_socket,false);
-        } else if (polledSockets[IPV4_SOCKET_OFFSET].events & POLLIN){
+        } else if (polledSockets[IPV4_SOCKET_OFFSET].revents & POLLIN){
             receiveFile(IPv6_socket,true);
         } else if (polledSockets[IPV4_SOCKET_OFFSET].revents & POLLERR || polledSockets[IPV6_SOCKET_OFFSET].revents & POLLERR) {
             break;
