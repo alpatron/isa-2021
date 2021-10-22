@@ -22,6 +22,9 @@ size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
 }
 
 uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len,bool IPv6){
+    if (IPv6){
+        return 0;
+    }
     uint32_t sum = 0;
     sum += *(uint16_t*)ICMP_message; //First word -- type and code
     size_t offset = 4; //We set the offset to 4. We move past the first word and the skip over the following, since it's the checksum word, which we need to skip for the computation.
@@ -34,7 +37,7 @@ uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len,bool IPv6){
     return ~((uint16_t)(sum  >> 16) + (uint16_t)(sum & 0xffff));
 }
 
-size_t buildEchoMessage( uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out,bool IPv6){
+size_t buildEchoMessage(uint16_t identifier, uint16_t sequence, const void* payload, size_t payloadLenght, uint8_t* out,bool IPv6){
     ((icmphdr*)out)->type = IPv6 ? ICMP6_ECHO_REQUEST : ICMP_ECHO;
     ((icmphdr*)out)->code = 0;
     ((icmphdr*)out)->un.echo.id = htons(identifier);

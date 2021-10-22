@@ -106,7 +106,7 @@ void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
     uint8_t payloadBuffer[PAYLOAD_BUFFER_SIZE];
     uint8_t sendBuffer [ICMP_MESSAGE_BUFFER_SIZE];
     uint8_t receiveBuffer[RECEIVE_BUFFER_SIZE];
-    auto echoSocket = socket(IPv6 ? AF_INET6 : AF_INET,SOCK_RAW,IPPROTO_ICMP);
+    auto echoSocket = socket(IPv6 ? AF_INET6 : AF_INET,SOCK_RAW,IPv6 ? IPPROTO_ICMPV6 : IPPROTO_ICMP);
     if (echoSocket == -1){
         if (errno == EPERM){
             throw std::runtime_error("This programs needs to be run with super-user privileges.");
@@ -133,9 +133,10 @@ void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
     auto packetCount = calculatePacketCount(filename.c_str(),filesize,PAYLOAD_BUFFER_SIZE);
     for(uint32_t packetNumber = 0;packetNumber<packetCount;packetNumber++){
         auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,PAYLOAD_BUFFER_SIZE,payloadBuffer);
-        auto echoLength = buildEchoMessage(false,(uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer);
+        auto echoLength = buildEchoMessage((uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer,IPv6);
         while(true){
             while((size_t)(errorCode = sendto(echoSocket,sendBuffer,echoLength,0,address->address,address->addressLenght)) != echoLength){
+                std::cerr << strerror(errno) << "\n";
                 std::cerr << "Failed to send packet. Waiting and retrying. Packet " << packetNumber + 1 << "/" << packetCount << "\n";
                 sleep(RESEND_ON_FAIL_WAIT);
             }

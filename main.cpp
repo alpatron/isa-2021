@@ -28,7 +28,7 @@ int main (int argc, char* argv[]){
             return EXIT_ERROR_NAME_RESOLUTION;
         }
         try{
-            sendFile_IPv4(arguments.fileName,&address);
+            sendFile(arguments.fileName,&address, address.addressFamily == AF_INET6);
         } catch (std::runtime_error& e){
             std::cerr << "Failure while sending file!" << std::endl;
             std::cerr << e.what() << std::endl;

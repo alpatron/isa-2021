@@ -3,6 +3,6 @@
 
 #include "addressResolution.hpp"
 
-void sendFile_IPv4(const char* filepath_cstring,Address* address);
+void sendFile(const char* filepath_cstring,Address* address,bool IPv6);
 
 #endif
