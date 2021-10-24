@@ -5,13 +5,15 @@
 #include <cstring>
 #include <netinet/ip_icmp.h>
 #include <netinet/icmp6.h>
+#include <netinet/ip6.h>
 #include <stdexcept>
 
-bool compareIPv4Sender(void* IP_packet,size_t size,Address* address){
-    if (size < sizeof(iphdr)){
-        throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
+bool compareAddress(sockaddr* a, sockaddr* b, bool IPv6){
+    if (IPv6){
+        return memcmp(&(((sockaddr_in6*)a)->sin6_addr), &(((sockaddr_in6*)b)->sin6_addr),sizeof(in6_addr)) == 0;
+    } else {
+        return ((sockaddr_in*)a)->sin_addr.s_addr == ((sockaddr_in*)b)->sin_addr.s_addr;
     }
-    return ((iphdr*)IP_packet)->saddr == (uint32_t)((sockaddr_in*)(address->address))->sin_addr.s_addr;
 }
 
 size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
@@ -47,11 +49,11 @@ size_t buildEchoMessage(uint16_t identifier, uint16_t sequence, const void* payl
     return payloadLenght + ICMP_ECHO_HEADER_SIZE;
 }
 
-bool isMyReplyICMP_Packet(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize){
+bool isMyReplyICMP_Packet(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize,bool IPv6){
     if (originalSize != receivedSize){
         return false;
     }
-    if (((icmphdr*)receivedPacket)->type != ICMP_ECHOREPLY || ((icmphdr*)receivedPacket)->code != 0){
+    if (((icmphdr*)receivedPacket)->type != (IPv6 ? ICMP6_ECHO_REPLY : ICMP_ECHOREPLY) || ((icmphdr*)receivedPacket)->code != 0){
         return false;
     }
     if (((icmphdr*)receivedPacket)->un.echo.id != ((icmphdr*)original_ICMP_packet)->un.echo.id ||

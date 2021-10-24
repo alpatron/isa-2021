@@ -22,13 +22,14 @@ const size_t ICMP_MESSAGE_BUFFER_SIZE = PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_S
 const size_t RECEIVE_BUFFER_SIZE = std::max((size_t)1500,PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE);
 const timeval SOCKET_RECEIVE_TIMEOUT = {30,0};
 
-bool isMyPacket(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize,Address* expectedSenderAddress){
-    if (!compareIPv4Sender(receivedPacket,receivedSize,expectedSenderAddress)){
-        return false;
+bool isMyPacket(uint8_t* original_ICMP_packet,uint8_t* receivedPacket,size_t originalSize, size_t receivedSize, bool IPv6){
+    if (IPv6){
+        return isMyReplyICMP_Packet(original_ICMP_packet,receivedPacket,originalSize,receivedSize,IPv6);
+    } else {
+        auto receivedPacketIPHeaderOffset = calculateIPv4HeaderOffset(receivedPacket,receivedSize);
+        auto receivedICMP_packet = receivedPacket + receivedPacketIPHeaderOffset;
+        return isMyReplyICMP_Packet(original_ICMP_packet,receivedICMP_packet,originalSize,receivedSize-receivedPacketIPHeaderOffset,IPv6);
     }
-    auto receivedPacketIPHeaderOffset = calculateIPv4HeaderOffset(receivedPacket,receivedSize);
-    auto receivedICMP_packet = receivedPacket + receivedPacketIPHeaderOffset;
-    return isMyReplyICMP_Packet(original_ICMP_packet,receivedICMP_packet,originalSize,receivedSize-receivedPacketIPHeaderOffset);
 }
 
 uint32_t calculatePacketCount(const char* filename, std::uintmax_t fileSize, size_t payloadLength){
@@ -106,6 +107,8 @@ void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
     uint8_t payloadBuffer[PAYLOAD_BUFFER_SIZE];
     uint8_t sendBuffer [ICMP_MESSAGE_BUFFER_SIZE];
     uint8_t receiveBuffer[RECEIVE_BUFFER_SIZE];
+    sockaddr_storage receivedFromAddress;
+    socklen_t receivedAddressLength;
     auto echoSocket = socket(IPv6 ? AF_INET6 : AF_INET,SOCK_RAW,IPv6 ? IPPROTO_ICMPV6 : IPPROTO_ICMP);
     if (echoSocket == -1){
         if (errno == EPERM){
@@ -143,8 +146,9 @@ void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
             auto sendTime = std::chrono::system_clock::now();
             bool gotMyPacket = false;
             do{
-                auto receivedBytes = recv(echoSocket,receiveBuffer,RECEIVE_BUFFER_SIZE,0);
-                if (isMyPacket(sendBuffer,receiveBuffer,echoLength,receivedBytes,address)){
+                receivedAddressLength = sizeof(receivedFromAddress);
+                auto receivedBytes = recvfrom(echoSocket,receiveBuffer,sizeof(receiveBuffer),0,(sockaddr*)&receivedFromAddress,&receivedAddressLength);
+                if (compareAddress(address->address,(sockaddr*)&receivedFromAddress,IPv6) && isMyPacket(sendBuffer,receiveBuffer,echoLength,receivedBytes,IPv6)){
                     gotMyPacket = true;
                 }
             }while(!gotMyPacket &&
