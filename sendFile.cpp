@@ -18,7 +18,8 @@ const int RESEND_ON_FAIL_WAIT = 1;
 const size_t IDENTIFIER_LENGTH = 4;
 const size_t PACKET_COUNT_LENGTH = sizeof(uint32_t);
 const size_t PAYLOAD_BUFFER_SIZE = 1400;
-const size_t ICMP_MESSAGE_BUFFER_SIZE = PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE;
+const size_t ENCRYPTED_PAYLOAD_BUFFER_SIZE = PAYLOAD_BUFFER_SIZE + 64;
+const size_t ICMP_MESSAGE_BUFFER_SIZE = ENCRYPTED_PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE;
 const size_t RECEIVE_BUFFER_SIZE = std::max((size_t)1500,PAYLOAD_BUFFER_SIZE + ICMP_ECHO_HEADER_SIZE);
 const timeval SOCKET_RECEIVE_TIMEOUT = {30,0};
 
@@ -105,6 +106,7 @@ size_t buildContinuePayload(std::ifstream & file, size_t payloadLenght,  uint8_t
 void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
     ssize_t errorCode;
     uint8_t payloadBuffer[PAYLOAD_BUFFER_SIZE];
+    uint8_t encryptedPayloadBuffer[PAYLOAD_BUFFER_SIZE];
     uint8_t sendBuffer [ICMP_MESSAGE_BUFFER_SIZE];
     uint8_t receiveBuffer[RECEIVE_BUFFER_SIZE];
     sockaddr_storage receivedFromAddress;
@@ -136,7 +138,8 @@ void sendFile(const char* filepath_cstring,Address* address,bool IPv6){
     auto packetCount = calculatePacketCount(filename.c_str(),filesize,PAYLOAD_BUFFER_SIZE);
     for(uint32_t packetNumber = 0;packetNumber<packetCount;packetNumber++){
         auto payloadLength = packetNumber == 0 ? buildOriginatePayload(filename.c_str(),file,packetCount,PAYLOAD_BUFFER_SIZE,payloadBuffer) : buildContinuePayload(file,PAYLOAD_BUFFER_SIZE,payloadBuffer);
-        auto echoLength = buildEchoMessage((uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),payloadBuffer,payloadLength,sendBuffer,IPv6);
+        auto encryptedPayloadLength = encrypt(payloadBuffer,payloadLength,packetNumber,encryptedPayloadBuffer);
+        auto echoLength = buildEchoMessage((uint16_t)((packetNumber & 0xffff0000) >> 16),(uint16_t)(packetNumber & 0xffff),encryptedPayloadBuffer,encryptedPayloadLength,sendBuffer,IPv6);
         while(true){
             while((size_t)(errorCode = sendto(echoSocket,sendBuffer,echoLength,0,address->address,address->addressLenght)) != echoLength){
                 std::cerr << strerror(errno) << "\n";

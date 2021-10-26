@@ -7,6 +7,81 @@
 #include <netinet/icmp6.h>
 #include <netinet/ip6.h>
 #include <stdexcept>
+#include <openssl/conf.h>
+#include <openssl/evp.h>
+#include <openssl/err.h>
+
+int encrypt(const unsigned char* input, size_t inputSize,uint32_t packetNumber,unsigned char* out){
+    EVP_CIPHER_CTX *ctx;
+    
+    const unsigned char* encryptionKey = (const unsigned char *)"xrucky01xrucky0";
+    uint64_t initialisationVector[2];
+    initialisationVector[0] = packetNumber;
+    initialisationVector[1] = packetNumber;
+    int outputLengthTmp;
+    int outputLength;
+
+
+    if(!(ctx = EVP_CIPHER_CTX_new())){
+        ERR_print_errors_fp(stderr);
+        throw std::runtime_error("Error while encrypting!");
+    }
+
+    if(1 != EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, encryptionKey, (unsigned char *)initialisationVector)){
+        ERR_print_errors_fp(stderr);
+        throw std::runtime_error("Error while encrypting!");
+    }
+
+    if(1 != EVP_EncryptUpdate(ctx, out, &outputLength, input, inputSize)){
+        ERR_print_errors_fp(stderr);
+        throw std::runtime_error("Error while encrypting!");
+    }
+
+    if(1 != EVP_EncryptFinal_ex(ctx, out + outputLength, &outputLengthTmp)){
+        ERR_print_errors_fp(stderr);
+        throw std::runtime_error("Error while encrypting!");
+    }  
+    
+    EVP_CIPHER_CTX_free(ctx);
+
+    return outputLength + outputLengthTmp;
+}
+
+int decrypt(const unsigned char* input, size_t inputSize,uint32_t packetNumber,unsigned char* out){
+    EVP_CIPHER_CTX *ctx;
+    
+    const unsigned char* encryptionKey = (const unsigned char *)"xrucky01xrucky0";
+    uint64_t initialisationVector[2];
+    initialisationVector[0] = packetNumber;
+    initialisationVector[1] = packetNumber;
+    int outputLengthTmp;
+    int outputLength;
+
+
+    if(!(ctx = EVP_CIPHER_CTX_new())){
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error(ERR_error_string(ERR_get_error(),NULL));
+    }
+
+    if(1 != EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, encryptionKey, (unsigned char *)initialisationVector)){
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error(ERR_error_string(ERR_get_error(),NULL));
+    }
+
+    if(1 != EVP_DecryptUpdate(ctx, out, &outputLength, input, inputSize)){
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error(ERR_error_string(ERR_get_error(),NULL));
+    }
+
+    if(1 != EVP_DecryptFinal_ex(ctx, out + outputLength, &outputLengthTmp)){
+        EVP_CIPHER_CTX_free(ctx);
+        throw std::runtime_error(ERR_error_string(ERR_get_error(),NULL));
+    }  
+    
+    EVP_CIPHER_CTX_free(ctx);
+
+    return outputLength + outputLengthTmp;
+}
 
 bool compareAddress(sockaddr* a, sockaddr* b, bool IPv6){
     if (IPv6){
@@ -21,6 +96,10 @@ size_t calculateIPv4HeaderOffset(void* IP_packet,size_t size){
         throw std::runtime_error("IP packet cannot possibly be this small. (You shouldn't see this error.)");
     }
     return ((iphdr*)IP_packet)->ihl * 4;
+}
+
+size_t calculatePacketIPHeaderOffset(void* IP_packet,size_t size, bool IPv6){
+    return (IPv6 ? 0 : calculateIPv4HeaderOffset(IP_packet,size));
 }
 
 uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len,bool IPv6){
