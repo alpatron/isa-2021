@@ -6,7 +6,7 @@
  * @brief Parses command-line arguments and saves their value to the args Arguments structure. This function calls getopt and thus modifies global variables used by getopt.
  * 
  * @param argc argc from the main function
- * @param argv argv from the main funciton
+ * @param argv argv from the main function
  * @param args a pointer to an Arguments structure
  * 
  * @throws std::runtime_error If given invalid user input or if getopt fails.

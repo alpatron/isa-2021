@@ -3,9 +3,13 @@
 
 #include <netdb.h>
 
+/**
+ * @brief A wrapper for the structure returned by getaddrinfo.
+ * 
+ */
 typedef struct {
     int addressFamily;
-    socklen_t addressLenght;
+    socklen_t addressLength;
     sockaddr *address;
     addrinfo* rawAddrinfo;
 } Address;
