@@ -24,9 +24,12 @@ int encrypt(const unsigned char* in, size_t inputSize,uint32_t packetNumber,unsi
     EVP_CIPHER_CTX *ctx;
     
     const unsigned char* encryptionKey = (const unsigned char *)"xrucky01xrucky0";
-    uint64_t initialisationVector[2];
-    initialisationVector[0] = packetNumber;
-    initialisationVector[1] = packetNumber;
+    auto networkPacketNumber = htonl(packetNumber);
+    uint32_t initialisationVector[4];
+    initialisationVector[0] = networkPacketNumber;
+    initialisationVector[1] = networkPacketNumber;
+    initialisationVector[2] = networkPacketNumber;
+    initialisationVector[3] = networkPacketNumber;
     int outputLengthTmp;
     int outputLength;
 
@@ -69,9 +72,12 @@ int decrypt(const unsigned char* input, size_t inputSize,uint32_t packetNumber,u
     EVP_CIPHER_CTX *ctx;
     
     const unsigned char* encryptionKey = (const unsigned char *)"xrucky01xrucky0";
-    uint64_t initialisationVector[2];
-    initialisationVector[0] = packetNumber;
-    initialisationVector[1] = packetNumber;
+    auto networkPacketNumber = htonl(packetNumber);
+    uint32_t initialisationVector[4];
+    initialisationVector[0] = networkPacketNumber;
+    initialisationVector[1] = networkPacketNumber;
+    initialisationVector[2] = networkPacketNumber;
+    initialisationVector[3] = networkPacketNumber;
     int outputLengthTmp;
     int outputLength;
 
@@ -165,7 +171,10 @@ uint16_t calculateChecksum(const uint8_t* ICMP_message,size_t len,bool IPv6){
     if (offset < len){ //We process the potentially remaining single byte.
         sum += *(uint8_t*)(ICMP_message+offset);
     }
-    return ~((uint16_t)(sum  >> 16) + (uint16_t)(sum & 0xffff));
+    while ((uint16_t)(sum  >> 16) != 0){
+        sum = ((uint16_t)(sum  >> 16) + (uint16_t)(sum & 0xffff));
+    }
+    return ~(uint16_t)sum;
 }
 
 /**
